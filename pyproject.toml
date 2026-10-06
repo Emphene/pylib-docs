@@ -1,0 +1,24 @@
+[project]
+name = "qlib-doc"
+version = "0.1.0"
+description = "Generate Markdown API documentation from Python source files without executing them"
+readme = "README.md"
+authors = [
+    { name = "Emphene", email = "116263658+Emphene@users.noreply.github.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "quantlib>=1.43",
+]
+
+[project.scripts]
+qlib-doc = "qlib_doc:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
