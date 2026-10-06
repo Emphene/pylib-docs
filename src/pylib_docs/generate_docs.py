@@ -392,7 +392,7 @@ def _discover_quantlib_source() -> Path | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="qlib-doc",
+        prog="pylib-docs",
         description="Generate a Markdown API reference from a Python source file, without executing it.",
     )
     parser.add_argument(

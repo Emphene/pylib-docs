@@ -1,4 +1,4 @@
-"""Tests for qlib_doc.generate_docs.
+"""Tests for pylib_docs.generate_docs.
 
 Each test parses a small in-memory fixture module (written to a temp file)
 and checks the extracted data plus the rendered Markdown.
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from qlib_doc.generate_docs import (
+from pylib_docs.generate_docs import (
     format_signature,
     main,
     parse_python_file,

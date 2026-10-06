@@ -159,7 +159,7 @@ def split_into_notes(source: Path, output: Path) -> tuple[list[str], list[str]]:
 # --------------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="qlib-split-notes",
+        prog="pylib-split-notes",
         description="Split a generated *_docs.md reference into one Obsidian note per class/function.",
     )
     parser.add_argument(
@@ -167,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         type=Path,
         default=Path("QuantLib_docs.md"),
-        help="documentation file produced by qlib-doc (default: ./QuantLib_docs.md)",
+        help="documentation file produced by pylib-docs (default: ./QuantLib_docs.md)",
     )
     parser.add_argument(
         "-o",

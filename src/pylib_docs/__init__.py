@@ -1,4 +1,4 @@
-"""qlib-doc: generate Markdown API documentation from Python source files."""
+"""pylib_docs: generate Markdown API documentation from Python source files."""
 
 from __future__ import annotations
 

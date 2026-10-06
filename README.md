@@ -1,8 +1,8 @@
-# qlib-doc
+# pylib_docs
 
 Generate a Markdown API reference from a Python source file — **without executing it**.
 
-`qlib-doc` reads the target file with Python's built-in [`ast`](https://docs.python.org/3/library/ast.html)
+`pylib-docs` reads the target file with Python's built-in [`ast`](https://docs.python.org/3/library/ast.html)
 module instead of importing it, so nothing in the file ever runs: no imports are
 triggered, no functions are called, and a multi-megabyte generated file (such as
 SWIG's `QuantLib.py`) is scanned safely as structure rather than as code.
@@ -28,30 +28,30 @@ uv sync
 
 ```bash
 # Document a specific file
-uv run qlib-doc path/to/QuantLib.py
+uv run pylib-docs path/to/QuantLib.py
 
 # Choose the output location (default: ./QuantLib_docs.md)
-uv run qlib-doc path/to/QuantLib.py -o docs/api/QuantLib.md
+uv run pylib-docs path/to/QuantLib.py -o docs/api/QuantLib.md
 
-# With no arguments, qlib-doc looks for QuantLib.py inside an installed
+# With no arguments, pylib-docs looks for QuantLib.py inside an installed
 # `quantlib` package
-uv run qlib-doc
+uv run pylib-docs
 ```
 
-You can also run the module directly: `uv run python -m qlib_doc.generate_docs <file>`.
+You can also run the module directly: `uv run python -m pylib_docs.generate_docs <file>`.
 
 ## Splitting into Obsidian notes
 
-`qlib-split-notes` splits a generated `*_docs.md` document into **one Markdown
+`pylib-split-notes` splits a generated `*_docs.md` document into **one Markdown
 note per class and per global function**, for use as an [Obsidian](https://obsidian.md/)
 vault — each `notes/*.md` file becomes a note:
 
 ```bash
 # Split ./QuantLib_docs.md into ./notes/ (defaults)
-uv run qlib-split-notes
+uv run pylib-split-notes
 
 # Explicit paths
-uv run qlib-split-notes docs/api/QuantLib.md -o vault/quantlib
+uv run pylib-split-notes docs/api/QuantLib.md -o vault/quantlib
 ```
 
 The output folder contains:

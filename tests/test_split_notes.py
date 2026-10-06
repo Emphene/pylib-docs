@@ -1,6 +1,6 @@
-"""Tests for qlib_doc.split_notes.
+"""Tests for pylib_docs.split_notes.
 
-A small in-memory fixture mimicking the qlib-doc output structure is written
+A small in-memory fixture mimicking the pylib-docs output structure is written
 to a temp file, split into notes, and the linking rules are asserted.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from qlib_doc.split_notes import collect_names, main, split_into_notes
+from pylib_docs.split_notes import collect_names, main, split_into_notes
 
 # --------------------------------------------------------------------------- #
 # Fixture
