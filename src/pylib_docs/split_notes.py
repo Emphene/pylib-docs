@@ -1,6 +1,6 @@
 """Render one Obsidian note per class / global function from a Python source file.
 
-The source file is parsed statically with :func:`pylib_docs.generate_docs.parse_python_file`
+The source file is parsed statically with :func:`pylib_docs.parser.parse_python_file`
 (so it is never executed) and every class and every module-level function
 becomes its own Markdown file in an output folder.  No intermediate
 ``*_docs.md`` document is produced: the notes are rendered directly from the
@@ -27,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-from .generate_docs import (
+from .parser import (
     ClassInfo,
     FunctionInfo,
     ModuleData,

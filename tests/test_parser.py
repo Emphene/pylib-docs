@@ -1,22 +1,16 @@
-"""Tests for pylib_docs.generate_docs.
+"""Tests for pylib_docs.parser.
 
 Each test parses a small in-memory fixture module (written to a temp file)
-and checks the extracted data plus the rendered Markdown.
+and checks the extracted data plus the signature formatting.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 
-from pylib_docs.generate_docs import (
-    format_signature,
-    main,
-    parse_python_file,
-    render_markdown,
-)
+from pylib_docs.parser import format_signature, parse_python_file
 
 # --------------------------------------------------------------------------- #
 # Fixture
@@ -204,91 +198,3 @@ def ast_parse(source: str):
     import ast
 
     return ast.parse(source).body[0]
-
-
-# --------------------------------------------------------------------------- #
-# Markdown rendering
-# --------------------------------------------------------------------------- #
-def test_every_toc_link_has_a_target(data):
-    markdown = render_markdown(data)
-    links = set(re.findall(r"\]\(#([^)]+)\)", markdown))
-    ids = set(re.findall(r'id="([^"]+)"', markdown))
-    assert links, "TOC should not be empty"
-    assert links <= ids, f"broken anchors: {links - ids}"
-
-
-def test_toc_lists_classes_and_functions(data):
-    markdown = render_markdown(data)
-    assert "- [Classes](#classes)" in markdown
-    assert "  - [Widget](#class-Widget)" in markdown
-    assert "- [Global Functions](#global-functions)" in markdown
-    assert "  - [plain()](#function-plain)" in markdown
-    assert "  - [fetch()](#function-fetch)" in markdown
-
-
-def test_anchor_ids_are_unique(data):
-    markdown = render_markdown(data)
-    ids = re.findall(r'id="([^"]+)"', markdown)
-    assert len(ids) == len(set(ids))
-
-
-def test_headings_are_rendered(data):
-    markdown = render_markdown(data)
-    assert "### `class` Widget" in markdown
-    assert "##### `__init__(name)`" in markdown
-    assert "##### `async def refresh(force=False)`" in markdown
-    assert "### `async def` fetch(url, *, timeout=30)" in markdown
-    assert "### `def` plain(" in markdown
-    assert "*Decorators:* `@property`" in markdown
-    assert "@overload" not in markdown  # stubs never leak into the output
-
-
-def test_class_without_methods_has_no_method_section(data):
-    markdown = render_markdown(data)
-    empty_section = markdown.split("### `class` Empty")[1].split("---")[0]
-    assert "#### Methods" not in empty_section
-
-
-def test_empty_sections_are_omitted(tmp_path: Path):
-    path = tmp_path / "only_classes.py"
-    path.write_text("class Solo:\n    '''Docs.'''\n", encoding="utf-8")
-    markdown = render_markdown(parse_python_file(path))
-    assert "Global Functions" not in markdown
-    assert "## Table of Contents" in markdown
-
-
-def test_no_definitions_at_all(tmp_path: Path):
-    path = tmp_path / "empty.py"
-    path.write_text("x = 1\n", encoding="utf-8")
-    markdown = render_markdown(parse_python_file(path))
-    assert "Table of Contents" not in markdown
-
-
-# --------------------------------------------------------------------------- #
-# CLI
-# --------------------------------------------------------------------------- #
-def test_cli_writes_to_cwd_by_default(source_file: Path, tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    assert main([str(source_file)]) == 0
-    output = tmp_path / "fixture_docs.md"
-    assert output.is_file()
-    assert "# API Reference Documentation" in output.read_text(encoding="utf-8")
-
-
-def test_cli_respects_output_flag(source_file: Path, tmp_path: Path):
-    output = tmp_path / "nested" / "custom.md"
-    assert main([str(source_file), "-o", str(output)]) == 0
-    assert output.is_file()
-
-
-def test_cli_missing_file_exits_with_code_2(tmp_path: Path):
-    with pytest.raises(SystemExit) as excinfo:
-        main([str(tmp_path / "nope.py")])
-    assert excinfo.value.code == 2
-
-
-def test_cli_syntax_error_returns_1(tmp_path: Path, capsys):
-    broken = tmp_path / "broken.py"
-    broken.write_text("def nope(:\n", encoding="utf-8")
-    assert main([str(broken)]) == 1
-    assert "not valid Python" in capsys.readouterr().err

@@ -1,4 +1,4 @@
-"""Generate Markdown API documentation from a Python source file.
+"""Static extraction of API data from a Python source file.
 
 The source file is parsed with the :mod:`ast` module, so it is never
 executed: no imports are triggered, no code runs, no memory is spent on
@@ -7,9 +7,7 @@ building object graphs.
 
 from __future__ import annotations
 
-import argparse
 import ast
-import sys
 import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,10 +17,7 @@ __all__ = [
     "FunctionInfo",
     "ModuleData",
     "format_signature",
-    "generate_markdown",
-    "main",
     "parse_python_file",
-    "render_markdown",
 ]
 
 _NO_DOC = "*No description provided.*"
@@ -249,120 +244,7 @@ def parse_python_file(file_path: str | Path) -> ModuleData:
 
 
 # --------------------------------------------------------------------------- #
-# Markdown rendering
-# --------------------------------------------------------------------------- #
-class _AnchorRegistry:
-    """Hands out unique anchor ids, deduplicating collisions with ``-2``, ``-3``…"""
-
-    def __init__(self, reserved: tuple[str, ...] = ()) -> None:
-        self._used = set(reserved)
-
-    def reserve(self, base: str) -> str:
-        anchor = base
-        counter = 2
-        while anchor in self._used:
-            anchor = f"{base}-{counter}"
-            counter += 1
-        self._used.add(anchor)
-        return anchor
-
-
-def _anchor_tag(anchor: str) -> str:
-    return f'<a id="{anchor}"></a>'
-
-
-def render_markdown(data: ModuleData) -> str:
-    """Convert extracted data into a Markdown document with a working TOC."""
-    anchors = _AnchorRegistry(reserved=("classes", "global-functions"))
-
-    classes = [(cls, anchors.reserve(cls.anchor)) for cls in data.classes]
-    functions = [(fn, anchors.reserve(fn.anchor)) for fn in data.functions]
-    method_anchors = {
-        method: anchors.reserve(method.anchor)
-        for cls, _ in classes
-        for method in cls.methods
-    }
-
-    lines: list[str] = []
-    add = lines.append
-
-    add("# API Reference Documentation")
-    add("")
-    if data.docstring:
-        add(data.docstring)
-        add("")
-
-    if classes or functions:
-        add("## Table of Contents")
-        add("")
-        if classes:
-            add("- [Classes](#classes)")
-            for cls, anchor in classes:
-                add(f"  - [{cls.name}](#{anchor})")
-        if functions:
-            add("- [Global Functions](#global-functions)")
-            for func, anchor in functions:
-                add(f"  - [{func.name}()](#{anchor})")
-        add("")
-        add("---")
-        add("")
-
-    if classes:
-        add(_anchor_tag("classes"))
-        add("## Classes")
-        add("")
-        for cls, anchor in classes:
-            add(_anchor_tag(anchor))
-            add(f"### `class` {cls.name}")
-            add("")
-            add(cls.docstring)
-            add("")
-            if cls.methods:
-                add("#### Methods")
-                add("")
-                for method in cls.methods:
-                    add(_anchor_tag(method_anchors[method]))
-                    keyword = "async def " if method.is_async else ""
-                    add(f"##### `{keyword}{method.signature}`")
-                    add("")
-                    if method.visible_decorators:
-                        add("*Decorators:* " + " ".join(f"`@{d}`" for d in method.visible_decorators))
-                        add("")
-                    add(method.docstring)
-                    add("")
-            add("---")
-            add("")
-
-    if functions:
-        add(_anchor_tag("global-functions"))
-        add("## Global Functions")
-        add("")
-        for func, anchor in functions:
-            add(_anchor_tag(anchor))
-            keyword = "async def" if func.is_async else "def"
-            add(f"### `{keyword}` {func.signature}")
-            add("")
-            if func.visible_decorators:
-                add("*Decorators:* " + " ".join(f"`@{d}`" for d in func.visible_decorators))
-                add("")
-            add(func.docstring)
-            add("")
-            add("---")
-            add("")
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def generate_markdown(data: ModuleData, output_file: str | Path) -> Path:
-    """Render ``data`` and write it to ``output_file``."""
-    output = Path(output_file)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_markdown(data), encoding="utf-8")
-    return output
-
-
-# --------------------------------------------------------------------------- #
-# CLI
+# Source discovery
 # --------------------------------------------------------------------------- #
 def _discover_quantlib_source() -> Path | None:
     """Locate ``QuantLib.py`` inside an installed ``quantlib`` package, if any."""
@@ -388,57 +270,3 @@ def _discover_quantlib_source() -> Path | None:
             if found:
                 return found[0]
     return None
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="pylib-docs",
-        description="Generate a Markdown API reference from a Python source file, without executing it.",
-    )
-    parser.add_argument(
-        "source",
-        nargs="?",
-        help="Python file to document (default: locate QuantLib.py from an installed quantlib package)",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        help="output Markdown path (default: ./<source_name>_docs.md)",
-    )
-    args = parser.parse_args(argv)
-
-    if args.source is None:
-        source = _discover_quantlib_source()
-        if source is None:
-            parser.error("no source file given and QuantLib.py could not be found; "
-                         "pass a path or install the quantlib package")
-    else:
-        source = Path(args.source)
-
-    if not source.is_file():
-        parser.error(f"source file not found: {source}")
-
-    output = args.output if args.output is not None else Path.cwd() / f"{source.stem}_docs.md"
-
-    print(f"Parsing {source} ...")
-    try:
-        data = parse_python_file(source)
-    except SyntaxError as exc:
-        print(f"error: {source} is not valid Python: {exc}", file=sys.stderr)
-        return 1
-    except (OSError, UnicodeDecodeError) as exc:
-        print(f"error: cannot read {source}: {exc}", file=sys.stderr)
-        return 1
-
-    generate_markdown(data, output)
-    print(
-        f"Wrote {output} "
-        f"({len(data.classes)} classes, {sum(len(c.methods) for c in data.classes)} methods, "
-        f"{len(data.functions)} functions)"
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

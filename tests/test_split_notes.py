@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from pylib_docs.generate_docs import ClassInfo, FunctionInfo, ModuleData, parse_python_file
+from pylib_docs.parser import ClassInfo, FunctionInfo, ModuleData, parse_python_file
 from pylib_docs.split_notes import collect_names, main, write_notes
 
 # --------------------------------------------------------------------------- #

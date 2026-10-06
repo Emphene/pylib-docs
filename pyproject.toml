@@ -12,7 +12,6 @@ dependencies = [
 ]
 
 [project.scripts]
-pylib-docs = "pylib_docs:main"
 pylib-split-notes = "pylib_docs.split_notes:main"
 
 [dependency-groups]
