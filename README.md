@@ -40,6 +40,33 @@ uv run qlib-doc
 
 You can also run the module directly: `uv run python -m qlib_doc.generate_docs <file>`.
 
+## Splitting into Obsidian notes
+
+`qlib-split-notes` splits a generated `*_docs.md` document into **one Markdown
+note per class and per global function**, for use as an [Obsidian](https://obsidian.md/)
+vault — each `notes/*.md` file becomes a note:
+
+```bash
+# Split ./QuantLib_docs.md into ./notes/ (defaults)
+uv run qlib-split-notes
+
+# Explicit paths
+uv run qlib-split-notes docs/api/QuantLib.md -o vault/quantlib
+```
+
+The output folder contains:
+
+- one note per entity (`notes/Period.md`, `notes/daysBetween.md`, ...), with the
+  class's methods kept as sections inside the class note,
+- `notes/Home.md`, an index note with a `[[wikilink]]` to every other note.
+
+Every occurrence of a documented name — in prose and in signatures — is rewritten
+as an Obsidian wikilink (`length(Period self)` becomes `length([[Period]] self)`),
+so the graph view connects the whole vault. Names are matched longest-first on
+identifier boundaries (`DateVector` never splits into `Date` + `Vector`), a note
+never links to itself, and method declaration headings are left untouched because
+they declare a method rather than reference another entity.
+
 ## How it works
 
 1. The source file is parsed statically with `ast.parse` — the file is read as

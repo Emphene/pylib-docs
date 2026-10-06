@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 qlib-doc = "qlib_doc:main"
+qlib-split-notes = "qlib_doc.split_notes:main"
 
 [dependency-groups]
 dev = [
