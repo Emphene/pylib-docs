@@ -1,9 +1,13 @@
-"""Split a generated ``*_docs.md`` reference into one Obsidian note per entity.
+"""Render one Obsidian note per class / global function from a Python source file.
 
-Each class and each global function of the source document becomes its own
-Markdown file in an output folder, and every occurrence of a documented name
-is rewritten as an Obsidian wikilink (``[[Name]]``) so the vault graph stays
-fully connected.
+The source file is parsed statically with :func:`pylib_docs.generate_docs.parse_python_file`
+(so it is never executed) and every class and every module-level function
+becomes its own Markdown file in an output folder.  No intermediate
+``*_docs.md`` document is produced: the notes are rendered directly from the
+parsed data, at their final heading depth.
+
+Every occurrence of a documented name is rewritten as an Obsidian wikilink
+(``[[Name]]``) so the vault graph stays fully connected.
 
 Linking rules:
 
@@ -23,7 +27,15 @@ import re
 import sys
 from pathlib import Path
 
-__all__ = ["collect_names", "main", "split_into_notes"]
+from .generate_docs import (
+    ClassInfo,
+    FunctionInfo,
+    ModuleData,
+    _discover_quantlib_source,
+    parse_python_file,
+)
+
+__all__ = ["collect_names", "main", "write_notes"]
 
 _INDEX_NAME = "Home.md"  # ``Index`` is itself a class in the generated docs
 
@@ -31,14 +43,14 @@ _INDEX_NAME = "Home.md"  # ``Index`` is itself a class in the generated docs
 # --------------------------------------------------------------------------- #
 # Name collection
 # --------------------------------------------------------------------------- #
-def collect_names(text: str) -> tuple[list[str], list[str]]:
-    """Return ``(class_names, function_names)`` declared in a docs document."""
-    classes = re.findall(r"^### `class` (.+)$", text, re.M)
-    functions = re.findall(r"^### `def` ([^(]+)\(", text, re.M)
+def collect_names(data: ModuleData) -> tuple[list[str], list[str]]:
+    """Return ``(class_names, function_names)`` declared in *data*, in document order."""
+    classes = [cls.name for cls in data.classes]
+    functions = [fn.name for fn in data.functions]
     if len(classes) != len(set(classes)):
-        raise ValueError("duplicate class names in source document")
+        raise ValueError("duplicate class names in source file")
     if len(functions) != len(set(functions)):
-        raise ValueError("duplicate function names in source document")
+        raise ValueError("duplicate function names in source file")
     if set(classes) & set(functions):
         raise ValueError("a name is used both as a class and as a function")
     return classes, functions
@@ -51,7 +63,7 @@ def _compile_name_pattern(names: set[str]) -> re.Pattern[str]:
 
 
 # --------------------------------------------------------------------------- #
-# Splitting
+# Wikilinking
 # --------------------------------------------------------------------------- #
 def _wikilink(content: str, self_name: str, name_re: re.Pattern[str]) -> str:
     """Rewrite documented names as wikilinks, one line at a time.
@@ -67,7 +79,7 @@ def _wikilink(content: str, self_name: str, name_re: re.Pattern[str]) -> str:
 
     def sub_line(line: str) -> str:
         if line.startswith("#"):
-            decl = re.match(r"^#{2,6} `([A-Za-z_]\w*)\(", line)
+            decl = re.match(r"^#{2,6} `(?:(?:async )?def )?([A-Za-z_]\w*)\(", line)
             if decl is not None:
                 state["method"] = decl.group(1)
                 return line  # method declaration heading: never a reference
@@ -81,77 +93,64 @@ def _wikilink(content: str, self_name: str, name_re: re.Pattern[str]) -> str:
     return "\n".join(sub_line(line) for line in content.split("\n"))
 
 
-def _restructure_block(kind: str, name: str, raw: str) -> str:
-    """Demote headings, drop anchors/separators, cut at the next section."""
-    out: list[str] = []
-    for line in raw.split("\n"):
-        if line.startswith('<a id="'):
-            continue
-        if line == "---":  # separator between source blocks
-            continue
-        if line.startswith("## "):  # leaked "## Global Functions" header
-            break
-        if kind == "class" and line == f"### `class` {name}":
-            out.append(f"# {name}")
-            continue
-        if kind == "def" and line.startswith("### `def` "):
-            out.append("# " + line[len("### `def` "):])
-            continue
-        if line == "#### Methods":
-            out.append("## Methods")
-            continue
-        if line.startswith("##### "):
-            out.append("### " + line[len("##### "):])
-            continue
-        out.append(line)
-    return "\n".join(out).strip("\n") + "\n"
+# --------------------------------------------------------------------------- #
+# Note rendering
+# --------------------------------------------------------------------------- #
+def _decorators_line(items: list[str]) -> list[str]:
+    return ["*Decorators:* " + " ".join(f"`@{d}`" for d in items), ""]
 
 
-def split_into_notes(source: Path, output: Path) -> tuple[list[str], list[str]]:
-    """Split *source* into per-entity notes in *output*.
+def _render_class(cls: ClassInfo) -> str:
+    """Render one class note, headings at their final depth (before wikilinking)."""
+    lines = [f"# {cls.name}", "", cls.docstring, ""]
+    if cls.methods:
+        lines += ["## Methods", ""]
+        for method in cls.methods:
+            keyword = "async def " if method.is_async else ""
+            lines += [f"### `{keyword}{method.signature}`", ""]
+            if method.visible_decorators:
+                lines += _decorators_line(method.visible_decorators)
+            lines += [method.docstring, ""]
+    return "\n".join(lines).rstrip("\n") + "\n"
 
-    Returns ``(class_names, function_names)`` in document order.  The index
-    note is written to ``output/Home.md``.
+
+def _render_function(func: FunctionInfo) -> str:
+    """Render one global-function note (before wikilinking)."""
+    lines = [f"# {func.signature}", ""]
+    if func.visible_decorators:
+        lines += _decorators_line(func.visible_decorators)
+    lines += [func.docstring, ""]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+# --------------------------------------------------------------------------- #
+# Notes
+# --------------------------------------------------------------------------- #
+def write_notes(data: ModuleData, output: Path) -> tuple[list[str], list[str]]:
+    """Render one note per entity in *output* and return ``(classes, functions)``.
+
+    The index note is written to ``output/Home.md``.
     """
-    text = source.read_text(encoding="utf-8")
-    classes, functions = collect_names(text)
-    name_re = _compile_name_pattern(set(classes) | set(functions))
-
-    if "## Classes\n" not in text:
-        raise ValueError(f"{source} has no '## Classes' section")
-    body = text[text.index("## Classes\n") :]
-
-    parts = re.split(r'(?=^<a id="(?:class|function)-[^"]+"></a>$)', body, flags=re.M)
-    if parts[0].strip() != "## Classes":
-        raise ValueError("unexpected content before the first class block")
-
-    output.mkdir(parents=True, exist_ok=True)
-    index_classes: list[str] = []
-    index_functions: list[str] = []
-
-    for part in parts[1:]:
-        hm = re.match(
-            r'^<a id="(?:class|function)-[^"]+"></a>\n### `(class|def)` (.+)$', part, re.M
-        )
-        if hm is None:
-            raise ValueError(f"cannot parse block starting with: {part[:80]!r}")
-        kind, heading = hm.group(1), hm.group(2)
-        name = heading if kind == "class" else re.match(r"[^(]+", heading).group(0)
-
-        content = _wikilink(_restructure_block(kind, name, part), name, name_re)
-        (output / f"{name}.md").write_text(content, encoding="utf-8")
-        (index_classes if kind == "class" else index_functions).append(name)
-
-    # NB: a class named "Index" exists, so the index must not be called Index.md
+    classes, functions = collect_names(data)
     if _INDEX_NAME[:-3] in set(classes) | set(functions):
         raise ValueError(f"index filename {_INDEX_NAME!r} collides with an entity note")
+    name_re = _compile_name_pattern(set(classes) | set(functions))
+
+    output.mkdir(parents=True, exist_ok=True)
+    for cls in data.classes:
+        note = _wikilink(_render_class(cls), cls.name, name_re)
+        (output / f"{cls.name}.md").write_text(note, encoding="utf-8")
+    for func in data.functions:
+        note = _wikilink(_render_function(func), func.name, name_re)
+        (output / f"{func.name}.md").write_text(note, encoding="utf-8")
+
     index = ["# QuantLib API Index", "", "## Classes", ""]
-    index += [f"- [[{n}]]" for n in index_classes]
+    index += [f"- [[{n}]]" for n in classes]
     index += ["", "## Global Functions", ""]
-    index += [f"- [[{n}]]" for n in index_functions]
+    index += [f"- [[{n}]]" for n in functions]
     (output / _INDEX_NAME).write_text("\n".join(index) + "\n", encoding="utf-8")
 
-    return index_classes, index_functions
+    return classes, functions
 
 
 # --------------------------------------------------------------------------- #
@@ -160,14 +159,13 @@ def split_into_notes(source: Path, output: Path) -> tuple[list[str], list[str]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="pylib-split-notes",
-        description="Split a generated *_docs.md reference into one Obsidian note per class/function.",
+        description="Render one Obsidian note per class/function from a Python source file.",
     )
     parser.add_argument(
         "source",
         nargs="?",
         type=Path,
-        default=Path("QuantLib_docs.md"),
-        help="documentation file produced by pylib-docs (default: ./QuantLib_docs.md)",
+        help="Python file to document (default: locate QuantLib.py from an installed quantlib package)",
     )
     parser.add_argument(
         "-o",
@@ -178,11 +176,34 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.source.is_file():
-        parser.error(f"source file not found: {args.source}")
+    if args.source is None:
+        source = _discover_quantlib_source()
+        if source is None:
+            parser.error("no source file given and QuantLib.py could not be found; "
+                         "pass a path or install the quantlib package")
+    else:
+        source = args.source
+
+    if not source.is_file():
+        parser.error(f"source file not found: {source}")
+    if source.suffix == ".md":
+        parser.error(
+            f"{source} is a Markdown file; pylib-split-notes reads the Python "
+            "source directly, pass the .py file instead"
+        )
+
+    print(f"Parsing {source} ...")
+    try:
+        data = parse_python_file(source)
+    except SyntaxError as exc:
+        print(f"error: {source} is not valid Python: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"error: cannot read {source}: {exc}", file=sys.stderr)
+        return 1
 
     try:
-        classes, functions = split_into_notes(args.source, args.output)
+        classes, functions = write_notes(data, args.output)
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

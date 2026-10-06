@@ -40,18 +40,24 @@ uv run pylib-docs
 
 You can also run the module directly: `uv run python -m pylib_docs.generate_docs <file>`.
 
+The generated document is a disposable artifact — `*_docs.md` is already
+covered by `.gitignore`, regenerate it at any time. It is optional:
+`pylib-split-notes` reads the Python source directly and never needs it.
+
 ## Splitting into Obsidian notes
 
-`pylib-split-notes` splits a generated `*_docs.md` document into **one Markdown
-note per class and per global function**, for use as an [Obsidian](https://obsidian.md/)
-vault — each `notes/*.md` file becomes a note:
+`pylib-split-notes` parses the **Python source file directly** (once, in
+memory — no intermediate `*_docs.md` is written) and renders **one Markdown
+note per class and per global function**, for use as an
+[Obsidian](https://obsidian.md/) vault — each `notes/*.md` file becomes a note:
 
 ```bash
-# Split ./QuantLib_docs.md into ./notes/ (defaults)
+# Same discovery as pylib-docs: QuantLib.py from an installed quantlib
+# package, notes written to ./notes/
 uv run pylib-split-notes
 
 # Explicit paths
-uv run pylib-split-notes docs/api/QuantLib.md -o vault/quantlib
+uv run pylib-split-notes path/to/QuantLib.py -o vault/quantlib
 ```
 
 The output folder contains:
@@ -73,8 +79,11 @@ they declare a method rather than reference another entity.
    text and never executed.
 2. Top-level classes and functions are collected (including definitions inside
    `if`/`try`/`with` guards, which generated code often uses).
-3. Everything is rendered into one Markdown file with explicit `<a id="...">`
-   anchors, so every Table of Contents link resolves.
+3. `pylib-docs` renders everything into one Markdown file with explicit
+   `<a id="...">` anchors, so every Table of Contents link resolves.
+4. `pylib-split-notes` renders the same parsed data straight into per-entity
+   notes at their final heading depth — the single document is never produced
+   or re-parsed as an intermediate step.
 
 ## Development
 
